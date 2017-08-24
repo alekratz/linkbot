@@ -2,11 +2,10 @@
 
 use Net::IRC::Bot;
 use Net::IRC::Modules::Autoident;
-use Net::HTTP::GET;
+use HTTP::Client;
 use HTML::Entity;
 
 constant Autoident = Net::IRC::Modules::Autoident;
-constant GET = Net::HTTP::GET;
 
 # The nickname to use.
 my Str $NICK = "linkbot";
@@ -40,8 +39,10 @@ sub msg-matches(Str $msg) returns Bool {
 }
 
 sub get-url-title(Str $url) returns Str {
-    my $response = GET($url);
-    if $response.header<Content-Type>[0] ~~ / "text/html" / and $response.content ~~ / "<title>" .+ "</title>" / {
+    my $client = HTTP::Client.new;
+    my $response = $client.get($url);
+    return if not $response.success;
+    if $response.header("Content-Type") ~~ / "text/html" / and $response.content ~~ / "<title>" .+ "</title>" / {
         "$/".substr(7, *-8).trim;
     }
     else { ""; }
@@ -50,10 +51,13 @@ sub get-url-title(Str $url) returns Str {
 class LinkRecording {
     # Called whenever someone says something
     multi method said ($e where { msg-matches .what }) {
-        my $url = ($e.what ~~ $url-regex) && $/;
         try {
+            my $url = ($e.what ~~ $url-regex) && $/;
             my $title = get-url-title "$url";
             $e.msg(decode-entities $title) if $title;
+            CATCH {
+                default { .say; }
+            }
         }
     }
 }
@@ -64,6 +68,5 @@ Net::IRC::Bot.new(
     channels    => @CHANNELS,
     modules     => (
         LinkRecording.new(),
-        Autoident.new(password => $NS_PASS) if $NS_PASS
     ),
 ).run;
